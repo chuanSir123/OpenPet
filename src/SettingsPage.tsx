@@ -9,6 +9,7 @@ import {
   type PetActionAnimationId,
   isPetActionAnimationId,
   pickPetActionFromPool,
+  pickRandomQuote,
 } from './pet/animation';
 import { isPetId } from './pet/catalog';
 import {
@@ -241,6 +242,9 @@ const TRANSLATIONS = {
     fallbackClickAction: 'Fallback click action',
     randomPool: 'Random action pool',
     randomPoolHint: 'Choose which animations can play when click mode is random.',
+    randomQuotePool: 'Random quote pool',
+    randomQuotePoolHint: 'Enter quotes one per line. A random quote shows with each random action.',
+    previewRandomQuote: 'Preview random quote',
     previewClick: 'Preview click action',
     previewFixedClick: 'Preview fixed click action',
     previewRandomClick: 'Preview random click action',
@@ -514,6 +518,9 @@ const TRANSLATIONS = {
     fallbackClickAction: '回退点击动作',
     randomPool: '随机动作池',
     randomPoolHint: '随机模式下，只会从勾选的动画里选择播放。',
+    randomQuotePool: '随机语录池',
+    randomQuotePoolHint: '每行一句语录，随机动作触发时随机显示一句。',
+    previewRandomQuote: '预览随机语录',
     previewClick: '预览点击动作',
     previewFixedClick: '预览固定点击动作',
     previewRandomClick: '预览随机点击动作',
@@ -1045,6 +1052,22 @@ export function SettingsPage() {
     });
   };
 
+  const previewRandomQuote = async () => {
+    const quote = pickRandomQuote(settings.randomQuotePool);
+    if (!quote) {
+      setFeedback(t.feedback.poolEmpty);
+      return;
+    }
+    await runCommand('quote-preview', async () => {
+      const next = await invoke<RuntimeSnapshot>('say', {
+        text: quote,
+        ttlMs: settings.eventBubbleTtlMs,
+      });
+      setSnapshot(next);
+      setFeedback(`"${quote}".`);
+    });
+  };
+
   const triggerCompanionEvent = async () => {
     await runCommand('event', async () => {
       const trimmedMessage = eventMessage.trim();
@@ -1245,6 +1268,11 @@ export function SettingsPage() {
         ? t.feedback.poolEmpty
         : t.feedback.settingsUpdated;
     void updateSettings({ ...settings, clickActionPool: nextPool }, successMessage);
+  };
+
+  const updateQuotePool = (text: string) => {
+    const quotes = text.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
+    void updateSettings({ ...settings, randomQuotePool: quotes }, t.feedback.settingsUpdated);
   };
 
   return (
@@ -1776,6 +1804,29 @@ export function SettingsPage() {
                 </label>
               )}
               {poolIsEmpty && <p className="warn-text">{t.feedback.poolEmpty}</p>}
+
+              <div className="field-stack">
+                <span>{t.randomQuotePool}</span>
+                <p className="helper-text">{t.randomQuotePoolHint}</p>
+                <textarea
+                  value={settings.randomQuotePool.join('\n')}
+                  onChange={(event) => updateQuotePool(event.target.value)}
+                  rows={4}
+                  aria-label={t.randomQuotePool}
+                  disabled={!tauriAvailable || busyAction === 'settings'}
+                />
+              </div>
+
+              {settings.randomQuotePool.length > 0 && (
+                <button
+                  className="compact-action"
+                  type="button"
+                  onClick={() => void previewRandomQuote()}
+                  disabled={!tauriAvailable || busyAction === 'quote-preview'}
+                >
+                  {t.previewRandomQuote}
+                </button>
+              )}
             </div>
           )}
 

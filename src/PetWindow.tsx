@@ -20,7 +20,6 @@ import {
 } from 'react';
 import { PetSprite } from './pet/PetSprite';
 import {
-  PET_IDLE_SELF_PLAY_ANIMATION_IDS,
   type PetAnimationId,
   getPetAnimation,
   getPetAnimationDurationMs,
@@ -28,6 +27,7 @@ import {
   getPetSurfaceSize,
   isPetAnimationId,
   pickPetActionFromPool,
+  pickRandomQuote,
 } from './pet/animation';
 import {
   type PetMotionState,
@@ -36,6 +36,7 @@ import {
   createInitialPetMotion,
   createRestingPetMotion,
   fallbackWorkArea,
+  groundY,
   resolvePetMotion,
 } from './pet/motion';
 import {
@@ -136,8 +137,7 @@ function hasTauriRuntime() {
 function pickIdleAction(settings: PetSettings): PetAnimationId {
   if (settings.idleAction === 'active-action') return settings.clickAction;
   if (settings.idleAction === 'random') {
-    const index = Math.floor(Math.random() * PET_IDLE_SELF_PLAY_ANIMATION_IDS.length);
-    return PET_IDLE_SELF_PLAY_ANIMATION_IDS[index] ?? 'waving';
+    return pickPetActionFromPool(settings.clickActionPool, 'waving');
   }
   return settings.idleAction;
 }
@@ -208,18 +208,21 @@ export function PetWindow() {
     setHovered(active);
   }, [markActivity]);
 
-  const playAction = useCallback((animationId: PetAnimationId, markAsActivity = true) => {
-    if (markAsActivity) markActivity();
-    if (actionTimerRef.current !== null) window.clearTimeout(actionTimerRef.current);
-    const duration = getPetAnimationDurationMs(getPetAnimation(animationId));
-    actionActiveUntilRef.current = Date.now() + duration;
-    setAnimation(animationId);
-    actionTimerRef.current = window.setTimeout(() => {
-      actionTimerRef.current = null;
-      actionActiveUntilRef.current = 0;
-      setAnimation('idle');
-    }, duration);
-  }, [markActivity]);
+  const playAction = useCallback(
+    (animationId: PetAnimationId, markAsActivity = true, durationMs?: number) => {
+      if (markAsActivity) markActivity();
+      if (actionTimerRef.current !== null) window.clearTimeout(actionTimerRef.current);
+      const duration = durationMs ?? getPetAnimationDurationMs(getPetAnimation(animationId));
+      actionActiveUntilRef.current = Date.now() + duration;
+      setAnimation(animationId);
+      actionTimerRef.current = window.setTimeout(() => {
+        actionTimerRef.current = null;
+        actionActiveUntilRef.current = 0;
+        setAnimation('idle');
+      }, duration);
+    },
+    [markActivity],
+  );
 
   const say = useCallback((payload: SayPayload) => {
     markActivity();
@@ -245,7 +248,9 @@ export function PetWindow() {
     const action = pickClickAction(settings);
     nextClickActionRef.current += 1;
     playAction(isPetAnimationId(action) ? action : 'waving');
-  }, [contextMenu, playAction, settings]);
+    const quote = pickRandomQuote(settings.randomQuotePool);
+    if (quote) say({ text: quote, ttlMs: settings.eventBubbleTtlMs });
+  }, [contextMenu, playAction, say, settings]);
 
   const handlePetKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -466,7 +471,9 @@ export function PetWindow() {
           appWindow.innerPosition(),
           appWindow.scaleFactor(),
         ]);
-        if (cancelled) return;
+        if (cancelled || draggingRef.current) {
+          return;
+        }
 
         const safeScaleFactor = scaleFactor || window.devicePixelRatio || 1;
         const point = {
@@ -591,7 +598,9 @@ export function PetWindow() {
       if (now - lastIdleActionAtRef.current < settings.idleActionFrequencyMs) return;
 
       lastIdleActionAtRef.current = now;
-      playAction(pickIdleAction(settings), false);
+      playAction(pickIdleAction(settings), false, settings.eventBubbleTtlMs);
+      const quote = pickRandomQuote(settings.randomQuotePool);
+      if (quote) say({ text: quote, ttlMs: settings.eventBubbleTtlMs });
     }, IDLE_SELF_PLAY_CHECK_MS);
 
     return () => window.clearInterval(timer);
@@ -599,14 +608,17 @@ export function PetWindow() {
     contextMenu,
     hovered,
     playAction,
+    say,
     settings.clickAction,
     settings.clickActionMode,
     settings.clickActionPool,
     settings.hoverPause,
     settings.idleAction,
     settings.idleActionFrequencyMs,
+    settings.eventBubbleTtlMs,
     settings.idleSelfPlay,
     settings.idleThresholdMs,
+    settings.randomQuotePool,
     settings.reducedMotion,
   ]);
 
@@ -618,6 +630,7 @@ export function PetWindow() {
     let cancelled = false;
     const walkingPaused = (settings.hoverPause && hovered) || dragging;
 
+    const appWindow = getCurrentWindow();
     const resizeWindow = () => {
       if (!tauriAvailable) return;
       void getCurrentWindow()
@@ -629,17 +642,30 @@ export function PetWindow() {
       workAreaRef.current = snapshotWorkArea.rect;
       workAreaScaleFactorRef.current = snapshotWorkArea.scaleFactor;
       if (!motionRef.current) {
-        motionRef.current = settings.autonomousWalking
-          ? createInitialPetMotion(snapshotWorkArea.rect, surfaceSize, surfaceInsets)
-          : createRestingPetMotion(snapshotWorkArea.rect, surfaceSize, surfaceInsets);
-      } else {
-        motionRef.current = clampPetMotionToWorkArea(
-          motionRef.current,
-          snapshotWorkArea.rect,
-          surfaceSize,
-          surfaceInsets,
-        );
+        // Capture the actual window position so toggling autonomous mode
+        // does not snap the pet to a default corner.
+        let fallbackX = snapshotWorkArea.rect.x;
+        let fallbackY = groundY(snapshotWorkArea.rect, surfaceSize);
+        if (tauriAvailable) {
+          try {
+            const wp = await appWindow.innerPosition();
+            fallbackX = wp.x / (workAreaScaleFactorRef.current || 1);
+            fallbackY = wp.y / (workAreaScaleFactorRef.current || 1);
+          } catch { /* fall through */ }
+        }
+        motionRef.current = {
+          x: fallbackX,
+          y: fallbackY,
+          direction: 1,
+          animation: 'idle',
+        };
       }
+      motionRef.current = clampPetMotionToWorkArea(
+        motionRef.current,
+        snapshotWorkArea.rect,
+        surfaceSize,
+        surfaceInsets,
+      );
     };
     const move = () => {
       if (cancelled) return;
@@ -661,7 +687,7 @@ export function PetWindow() {
       });
       motionRef.current = next;
       if (Date.now() >= actionActiveUntilRef.current) setAnimation(next.animation);
-      if (tauriAvailable && !draggingRef.current) {
+      if (tauriAvailable && settings.autonomousWalking && !draggingRef.current) {
         void getCurrentWindow()
           .setPosition(new LogicalPosition(Math.round(next.x), Math.round(next.y)))
           .catch(() => {});

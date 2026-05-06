@@ -19,6 +19,7 @@ export type PetSettings = {
   clickActionMode: ClickActionMode;
   clickAction: PetActionAnimationId;
   clickActionPool: PetActionAnimationId[];
+  randomQuotePool: string[];
   eventReactions: boolean;
   eventBubbles: boolean;
   eventBubbleTtlMs: number;
@@ -118,6 +119,7 @@ export const DEFAULT_SETTINGS: PetSettings = {
   clickActionMode: 'random',
   clickAction: 'waving',
   clickActionPool: ['waving', 'jumping', 'waiting', 'running', 'review'],
+  randomQuotePool: [],
   eventReactions: true,
   eventBubbles: true,
   eventBubbleTtlMs: 4000,

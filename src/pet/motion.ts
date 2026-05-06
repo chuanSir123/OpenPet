@@ -24,7 +24,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function groundY(workArea: Rect, surfaceSize: PetWindowSize): number {
+export function groundY(workArea: Rect, surfaceSize: PetWindowSize): number {
   return workArea.y + workArea.height - surfaceSize.height - EDGE_MARGIN;
 }
 

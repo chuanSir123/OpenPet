@@ -48,6 +48,14 @@ export function pickPetActionFromPool(
   return candidates[index] ?? fallback;
 }
 
+export function pickRandomQuote(
+  pool: readonly string[],
+): string | null {
+  const candidates = pool.filter((s) => s.trim().length > 0);
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
+}
+
 export const PET_IDLE_SELF_PLAY_ANIMATION_IDS = [
   'waving',
   'jumping',
