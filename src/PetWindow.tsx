@@ -247,7 +247,7 @@ export function PetWindow() {
     }
     const action = pickClickAction(settings);
     nextClickActionRef.current += 1;
-    playAction(isPetAnimationId(action) ? action : 'waving');
+    playAction(isPetAnimationId(action) ? action : 'waving', true, settings.eventBubbleTtlMs);
     const quote = pickRandomQuote(settings.randomQuotePool);
     if (quote) say({ text: quote, ttlMs: settings.eventBubbleTtlMs });
   }, [contextMenu, playAction, say, settings]);
